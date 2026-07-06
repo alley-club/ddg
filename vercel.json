@@ -1,0 +1,42 @@
+{
+  "builds": [
+    {
+      "src": "api/chat.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/chat/result",
+      "dest": "api/chat.js"
+    },
+    {
+      "src": "/api/chat/reply",
+      "dest": "api/chat.js"
+    },
+    {
+      "src": "/api/edit/result",
+      "dest": "api/chat.js"
+    },
+    {
+      "src": "/api/edit/reply",
+      "dest": "api/chat.js"
+    },
+    {
+      "src": "/api/edit",
+      "dest": "api/chat.js"
+    },
+    {
+      "src": "/api/image/result",
+      "dest": "api/chat.js"
+    },
+    {
+      "src": "/api/image",
+      "dest": "api/chat.js"
+    },
+    {
+      "src": "/api/chat",
+      "dest": "api/chat.js"
+    }
+  ]
+}
