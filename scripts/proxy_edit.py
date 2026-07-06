@@ -453,11 +453,9 @@ def extract_last_frame_from_gif(gif_bytes):
         from PIL import Image
         import io
         gif = Image.open(io.BytesIO(gif_bytes))
-        # Seek to last frame
         n_frames = getattr(gif, 'n_frames', 1)
         if n_frames > 1:
             gif.seek(n_frames - 1)
-        # Convert to PNG
         buf = io.BytesIO()
         gif.convert("RGB").save(buf, format="PNG")
         print(f"[+] Extracted last frame from GIF ({n_frames} frames)")
