@@ -447,24 +447,54 @@ def dismiss_overlays(page):
     time.sleep(3)
 
 
+def extract_last_frame_from_gif(gif_bytes):
+    """Extract the last frame from an animated GIF as PNG bytes."""
+    try:
+        from PIL import Image
+        import io
+        gif = Image.open(io.BytesIO(gif_bytes))
+        # Seek to last frame
+        n_frames = getattr(gif, 'n_frames', 1)
+        if n_frames > 1:
+            gif.seek(n_frames - 1)
+        # Convert to PNG
+        buf = io.BytesIO()
+        gif.convert("RGB").save(buf, format="PNG")
+        print(f"[+] Extracted last frame from GIF ({n_frames} frames)")
+        return buf.getvalue()
+    except Exception as e:
+        print(f"[!] Failed to extract GIF frame: {e}")
+        return gif_bytes
+
+
 def upload_captured_images(captured_images, pre_existing_urls):
     """Upload network-intercepted images to tmpfiles.org. Returns list of URLs.
-    Skips GIFs (animation artifacts) and images smaller than 20KB."""
+    Prefers PNG/JPG. If only GIFs found, extracts last frame."""
     tmp_urls = []
     new_captured = [img for img in captured_images if img["url"] not in pre_existing_urls]
-    # Filter out GIFs and small images
-    new_captured = [
-        img for img in new_captured
-        if "gif" not in img["content_type"] and len(img["body"]) > 20000
-    ]
-    if new_captured:
-        print(f"[*] Processing {len(new_captured)} network-intercepted image(s)...")
-        for idx, img in enumerate(new_captured):
+    new_captured = [img for img in new_captured if len(img["body"]) > 5000]
+
+    # Separate non-GIF and GIF
+    non_gif = [img for img in new_captured if "gif" not in img["content_type"]]
+    gifs_only = [img for img in new_captured if "gif" in img["content_type"]]
+
+    to_process = non_gif if non_gif else gifs_only
+
+    if to_process:
+        print(f"[*] Processing {len(to_process)} network-intercepted image(s)...")
+        for idx, img in enumerate(to_process):
             ct = img["content_type"]
-            ext = "png"
-            if "jpeg" in ct or "jpg" in ct: ext = "jpg"
-            elif "webp" in ct: ext = "webp"
-            url = upload_to_tmpfiles(img["body"], f"ddg_edit_{idx}.{ext}")
+            img_bytes = img["body"]
+
+            if "gif" in ct:
+                img_bytes = extract_last_frame_from_gif(img_bytes)
+                ext = "png"
+            else:
+                ext = "png"
+                if "jpeg" in ct or "jpg" in ct: ext = "jpg"
+                elif "webp" in ct: ext = "webp"
+
+            url = upload_to_tmpfiles(img_bytes, f"ddg_edit_{idx}.{ext}")
             if url:
                 tmp_urls.append(url)
     return tmp_urls
