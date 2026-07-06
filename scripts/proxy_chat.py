@@ -61,24 +61,41 @@ def redis_get(key):
 
 
 def upload_to_tmpfiles(image_bytes, filename="image.png"):
-    """Upload to catbox.moe (direct download URLs)."""
+    """Upload to tmpfiles.org with retry, fallback to file.io."""
     for attempt in range(3):
         try:
             r = requests.post(
-                "https://catbox.moe/user/api.php",
-                data={"reqtype": "fileupload"},
-                files={"fileToUpload": (filename, image_bytes)},
-                timeout=60,
+                "https://tmpfiles.org/api/v1/upload",
+                files={"file": (filename, image_bytes, "image/png")},
+                timeout=30,
             )
-            if r.status_code == 200 and r.text.strip().startswith("https://"):
-                url = r.text.strip()
-                print(f"[+] Uploaded to catbox: {url}")
-                return url
-            print(f"[!] catbox response (attempt {attempt+1}): {r.text[:200]}")
+            data = r.json()
+            if data.get("status") == "success" and data.get("data", {}).get("url"):
+                url = data["data"]["url"]
+                direct = url.replace("tmpfiles.org/", "tmpfiles.org/dl/")
+                print(f"[+] Uploaded to tmpfiles: {direct}")
+                return direct
+            print(f"[!] tmpfiles response (attempt {attempt+1}): {data}")
         except Exception as e:
-            print(f"[!] catbox upload failed (attempt {attempt+1}): {e}")
+            print(f"[!] tmpfiles upload failed (attempt {attempt+1}): {e}")
         if attempt < 2:
             time.sleep(2)
+
+    # Fallback: file.io
+    try:
+        print("[*] Falling back to file.io...")
+        r = requests.post(
+            "https://file.io",
+            files={"file": (filename, image_bytes, "image/png")},
+            timeout=30,
+        )
+        data = r.json()
+        if data.get("link"):
+            print(f"[+] Uploaded to file.io: {data['link']}")
+            return data["link"]
+        print(f"[!] file.io response: {data}")
+    except Exception as e:
+        print(f"[!] file.io upload failed: {e}")
 
     return None
 
