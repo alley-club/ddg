@@ -60,43 +60,24 @@ def redis_set_raw(key, value, ttl=300):
 
 
 def upload_to_tmpfiles(content, filename="image.png"):
+    """Upload to catbox.moe (direct download URLs)."""
     for attempt in range(3):
         try:
             r = requests.post(
-                "https://tmpfiles.org/api/v1/upload",
-                files={"file": (filename, content)},
-                timeout=30,
+                "https://catbox.moe/user/api.php",
+                data={"reqtype": "fileupload"},
+                files={"fileToUpload": (filename, content, "image/png")},
+                timeout=60,
             )
-            if r.status_code == 200:
-                data = r.json()
-                if data.get("data", {}).get("url"):
-                    url = data["data"]["url"].replace("tmpfiles.org/", "tmpfiles.org/dl/")
-                    print(f"[+] Uploaded: {url}")
-                    return url
+            if r.status_code == 200 and r.text.strip().startswith("https://"):
+                url = r.text.strip()
+                print(f"[+] Uploaded to catbox: {url}")
+                return url
+            print(f"[!] catbox response (attempt {attempt+1}): {r.text[:200]}")
         except Exception as e:
-            print(f"[!] Upload attempt {attempt + 1} failed: {e}")
-        time.sleep(2)
-
-    # Fallback to 0x0.st
-    try:
-        r = requests.post("https://0x0.st", files={"file": (filename, content)}, timeout=30)
-        if r.status_code == 200:
-            url = r.text.strip()
-            print(f"[+] Uploaded to 0x0.st: {url}")
-            return url
-    except Exception as e:
-        print(f"[!] 0x0.st fallback failed: {e}")
-
-    # Fallback to file.io
-    try:
-        r = requests.post("https://file.io", files={"file": (filename, content)}, timeout=30)
-        if r.status_code == 200:
-            data = r.json()
-            if data.get("link"):
-                print(f"[+] Uploaded to file.io: {data['link']}")
-                return data["link"]
-    except Exception as e:
-        print(f"[!] file.io fallback failed: {e}")
+            print(f"[!] catbox upload failed (attempt {attempt+1}): {e}")
+        if attempt < 2:
+            time.sleep(2)
 
     return None
 
