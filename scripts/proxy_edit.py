@@ -678,7 +678,7 @@ def send_edit_via_browser(image_url, edit_prompt):
             final_dom_images = dom_images
             if total_new == last_image_count:
                 stable_count += 1
-                if stable_count >= 4:
+                if stable_count >= 6:
                     print(f"[+] Images stable at {elapsed}s: {total_new} new images")
                     break
             else:
@@ -708,7 +708,16 @@ def send_edit_via_browser(image_url, edit_prompt):
     result = {"status": "success", "type": "image", "proxy": proxy_url[:40]}
 
     if got_images:
-        # Prefer DOM images (base64 JPEG results) over network captures (GIF animations)
+        # Wait extra for DOM base64 to appear (GIF finishes before JPEG is injected)
+        time.sleep(5)
+        final_dom_images = extract_images_from_page(page)
+        print(f"[*] Final DOM sweep: {len(final_dom_images)} images found")
+        for img in final_dom_images[:5]:
+            t = img.get("type", "?")
+            d = str(img.get("data", ""))[:80]
+            print(f"    [{t}] {d}...")
+
+        # Prefer DOM base64 images over network GIF captures
         tmp_urls = []
         if final_dom_images:
             tmp_urls = upload_dom_images(final_dom_images, pre_existing_urls)
