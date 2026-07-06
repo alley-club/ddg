@@ -448,9 +448,15 @@ def dismiss_overlays(page):
 
 
 def upload_captured_images(captured_images, pre_existing_urls):
-    """Upload network-intercepted images to tmpfiles.org. Returns list of URLs."""
+    """Upload network-intercepted images to tmpfiles.org. Returns list of URLs.
+    Skips GIFs (animation artifacts) and images smaller than 20KB."""
     tmp_urls = []
     new_captured = [img for img in captured_images if img["url"] not in pre_existing_urls]
+    # Filter out GIFs and small images
+    new_captured = [
+        img for img in new_captured
+        if "gif" not in img["content_type"] and len(img["body"]) > 20000
+    ]
     if new_captured:
         print(f"[*] Processing {len(new_captured)} network-intercepted image(s)...")
         for idx, img in enumerate(new_captured):
@@ -458,7 +464,6 @@ def upload_captured_images(captured_images, pre_existing_urls):
             ext = "png"
             if "jpeg" in ct or "jpg" in ct: ext = "jpg"
             elif "webp" in ct: ext = "webp"
-            elif "gif" in ct: ext = "gif"
             url = upload_to_tmpfiles(img["body"], f"ddg_edit_{idx}.{ext}")
             if url:
                 tmp_urls.append(url)
@@ -490,12 +495,13 @@ def upload_dom_images(images, pre_existing_urls):
             elif img_type == "url" and isinstance(img_data, str) and img_data.startswith("http"):
                 print(f"[*] Downloading: {img_data[:100]}")
                 dl = requests.get(img_data, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
-                if dl.status_code == 200 and len(dl.content) > 1000:
+                if dl.status_code == 200 and len(dl.content) > 20000:
                     ct = dl.headers.get("content-type", "")
+                    if "gif" in ct:
+                        continue
                     ext = "png"
                     if "jpeg" in ct or "jpg" in ct: ext = "jpg"
                     elif "webp" in ct: ext = "webp"
-                    elif "gif" in ct: ext = "gif"
                     url = upload_to_tmpfiles(dl.content, f"ddg_edit_{idx}.{ext}")
                     if url:
                         tmp_urls.append(url)
