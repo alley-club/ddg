@@ -708,10 +708,12 @@ def send_edit_via_browser(image_url, edit_prompt):
     result = {"status": "success", "type": "image", "proxy": proxy_url[:40]}
 
     if got_images:
-        # Upload images
-        tmp_urls = upload_captured_images(captured_images, pre_existing_urls)
-        if not tmp_urls and final_dom_images:
+        # Prefer DOM images (base64 JPEG results) over network captures (GIF animations)
+        tmp_urls = []
+        if final_dom_images:
             tmp_urls = upload_dom_images(final_dom_images, pre_existing_urls)
+        if not tmp_urls:
+            tmp_urls = upload_captured_images(captured_images, pre_existing_urls)
         if tmp_urls:
             result["images"] = tmp_urls
             browser.close()
@@ -850,9 +852,11 @@ def handle_reply(request_id, reply_message, proxy_url, original_image_url):
     result = {"status": "success", "type": "image", "proxy": proxy_url[:40]}
 
     if got_images:
-        tmp_urls = upload_captured_images(captured_images, pre_existing_urls)
-        if not tmp_urls and final_dom_images:
+        tmp_urls = []
+        if final_dom_images:
             tmp_urls = upload_dom_images(final_dom_images, pre_existing_urls)
+        if not tmp_urls:
+            tmp_urls = upload_captured_images(captured_images, pre_existing_urls)
         if tmp_urls:
             result["images"] = tmp_urls
             browser.close()
