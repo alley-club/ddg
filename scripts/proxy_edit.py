@@ -63,24 +63,41 @@ def redis_get(key):
 
 
 def upload_to_tmpfiles(image_bytes, filename="image.png"):
-    """Upload to catbox.moe (direct download URLs)."""
+    """Upload to tmpfiles.org with retry, fallback to file.io."""
     for attempt in range(3):
         try:
             r = requests.post(
-                "https://catbox.moe/user/api.php",
-                data={"reqtype": "fileupload"},
-                files={"fileToUpload": (filename, image_bytes)},
-                timeout=60,
+                "https://tmpfiles.org/api/v1/upload",
+                files={"file": (filename, image_bytes, "image/png")},
+                timeout=30,
             )
-            if r.status_code == 200 and r.text.strip().startswith("https://"):
-                url = r.text.strip()
-                print(f"[+] Uploaded to catbox: {url}")
-                return url
-            print(f"[!] catbox response (attempt {attempt+1}): {r.text[:200]}")
+            data = r.json()
+            if data.get("status") == "success" and data.get("data", {}).get("url"):
+                url = data["data"]["url"]
+                direct = url.replace("tmpfiles.org/", "tmpfiles.org/dl/")
+                print(f"[+] Uploaded to tmpfiles: {direct}")
+                return direct
+            print(f"[!] tmpfiles response (attempt {attempt+1}): {data}")
         except Exception as e:
-            print(f"[!] catbox upload failed (attempt {attempt+1}): {e}")
+            print(f"[!] tmpfiles upload failed (attempt {attempt+1}): {e}")
         if attempt < 2:
             time.sleep(2)
+
+    # Fallback: file.io
+    try:
+        print("[*] Falling back to file.io...")
+        r = requests.post(
+            "https://file.io",
+            files={"file": (filename, image_bytes, "image/png")},
+            timeout=30,
+        )
+        data = r.json()
+        if data.get("link"):
+            print(f"[+] Uploaded to file.io: {data['link']}")
+            return data["link"]
+        print(f"[!] file.io response: {data}")
+    except Exception as e:
+        print(f"[!] file.io upload failed: {e}")
 
     return None
 
@@ -430,52 +447,19 @@ def dismiss_overlays(page):
     time.sleep(3)
 
 
-def extract_last_frame_from_gif(gif_bytes):
-    """Extract the last frame from an animated GIF as PNG bytes."""
-    try:
-        from PIL import Image
-        import io
-        gif = Image.open(io.BytesIO(gif_bytes))
-        n_frames = getattr(gif, 'n_frames', 1)
-        if n_frames > 1:
-            gif.seek(n_frames - 1)
-        buf = io.BytesIO()
-        gif.convert("RGB").save(buf, format="PNG")
-        print(f"[+] Extracted last frame from GIF ({n_frames} frames)")
-        return buf.getvalue()
-    except Exception as e:
-        print(f"[!] Failed to extract GIF frame: {e}")
-        return gif_bytes
-
-
 def upload_captured_images(captured_images, pre_existing_urls):
-    """Upload network-intercepted images to tmpfiles.org. Returns list of URLs.
-    Prefers PNG/JPG. If only GIFs found, extracts last frame."""
+    """Upload network-intercepted images to tmpfiles.org. Returns list of URLs."""
     tmp_urls = []
     new_captured = [img for img in captured_images if img["url"] not in pre_existing_urls]
-    new_captured = [img for img in new_captured if len(img["body"]) > 5000]
-
-    # Separate non-GIF and GIF
-    non_gif = [img for img in new_captured if "gif" not in img["content_type"]]
-    gifs_only = [img for img in new_captured if "gif" in img["content_type"]]
-
-    to_process = non_gif if non_gif else gifs_only
-
-    if to_process:
-        print(f"[*] Processing {len(to_process)} network-intercepted image(s)...")
-        for idx, img in enumerate(to_process):
+    if new_captured:
+        print(f"[*] Processing {len(new_captured)} network-intercepted image(s)...")
+        for idx, img in enumerate(new_captured):
             ct = img["content_type"]
-            img_bytes = img["body"]
-
-            if "gif" in ct:
-                img_bytes = extract_last_frame_from_gif(img_bytes)
-                ext = "png"
-            else:
-                ext = "png"
-                if "jpeg" in ct or "jpg" in ct: ext = "jpg"
-                elif "webp" in ct: ext = "webp"
-
-            url = upload_to_tmpfiles(img_bytes, f"ddg_edit_{idx}.{ext}")
+            ext = "png"
+            if "jpeg" in ct or "jpg" in ct: ext = "jpg"
+            elif "webp" in ct: ext = "webp"
+            elif "gif" in ct: ext = "gif"
+            url = upload_to_tmpfiles(img["body"], f"ddg_edit_{idx}.{ext}")
             if url:
                 tmp_urls.append(url)
     return tmp_urls
@@ -506,13 +490,12 @@ def upload_dom_images(images, pre_existing_urls):
             elif img_type == "url" and isinstance(img_data, str) and img_data.startswith("http"):
                 print(f"[*] Downloading: {img_data[:100]}")
                 dl = requests.get(img_data, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
-                if dl.status_code == 200 and len(dl.content) > 20000:
+                if dl.status_code == 200 and len(dl.content) > 1000:
                     ct = dl.headers.get("content-type", "")
-                    if "gif" in ct:
-                        continue
                     ext = "png"
                     if "jpeg" in ct or "jpg" in ct: ext = "jpg"
                     elif "webp" in ct: ext = "webp"
+                    elif "gif" in ct: ext = "gif"
                     url = upload_to_tmpfiles(dl.content, f"ddg_edit_{idx}.{ext}")
                     if url:
                         tmp_urls.append(url)
@@ -659,7 +642,7 @@ def send_edit_via_browser(image_url, edit_prompt):
             final_dom_images = dom_images
             if total_new == last_image_count:
                 stable_count += 1
-                if stable_count >= 6:
+                if stable_count >= 4:
                     print(f"[+] Images stable at {elapsed}s: {total_new} new images")
                     break
             else:
@@ -689,21 +672,10 @@ def send_edit_via_browser(image_url, edit_prompt):
     result = {"status": "success", "type": "image", "proxy": proxy_url[:40]}
 
     if got_images:
-        # Wait extra for DOM base64 to appear (GIF finishes before JPEG is injected)
-        time.sleep(5)
-        final_dom_images = extract_images_from_page(page)
-        print(f"[*] Final DOM sweep: {len(final_dom_images)} images found")
-        for img in final_dom_images[:5]:
-            t = img.get("type", "?")
-            d = str(img.get("data", ""))[:80]
-            print(f"    [{t}] {d}...")
-
-        # Prefer DOM base64 images over network GIF captures
-        tmp_urls = []
-        if final_dom_images:
+        # Upload images
+        tmp_urls = upload_captured_images(captured_images, pre_existing_urls)
+        if not tmp_urls and final_dom_images:
             tmp_urls = upload_dom_images(final_dom_images, pre_existing_urls)
-        if not tmp_urls:
-            tmp_urls = upload_captured_images(captured_images, pre_existing_urls)
         if tmp_urls:
             result["images"] = tmp_urls
             browser.close()
@@ -842,11 +814,9 @@ def handle_reply(request_id, reply_message, proxy_url, original_image_url):
     result = {"status": "success", "type": "image", "proxy": proxy_url[:40]}
 
     if got_images:
-        tmp_urls = []
-        if final_dom_images:
+        tmp_urls = upload_captured_images(captured_images, pre_existing_urls)
+        if not tmp_urls and final_dom_images:
             tmp_urls = upload_dom_images(final_dom_images, pre_existing_urls)
-        if not tmp_urls:
-            tmp_urls = upload_captured_images(captured_images, pre_existing_urls)
         if tmp_urls:
             result["images"] = tmp_urls
             browser.close()
