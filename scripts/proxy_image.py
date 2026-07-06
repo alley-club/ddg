@@ -66,7 +66,7 @@ def upload_to_tmpfiles(content, filename="image.png"):
             r = requests.post(
                 "https://catbox.moe/user/api.php",
                 data={"reqtype": "fileupload"},
-                files={"fileToUpload": (filename, content, "image/png")},
+                files={"fileToUpload": (filename, content)},
                 timeout=60,
             )
             if r.status_code == 200 and r.text.strip().startswith("https://"):
