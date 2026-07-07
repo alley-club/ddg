@@ -202,25 +202,23 @@ def extract_images_from_page(page):
 
 
 def craft_edit_prompt(prompt):
-    """Craft a direct edit prompt with CRITICAL suffix to avoid follow-up questions."""
+    """Craft a direct edit prompt that forces image generation without follow-up questions."""
     prompt = prompt.strip()
 
-    CRITICAL_SUFFIX = (
-        " CRITICAL API CONSTRAINT: Do not reply with text. Do not ask for clarification, "
-        "preferences, style, or color choices. If any details are unspecified, make a creative "
-        "decision yourself and execute the image edit immediately. Your entire response must "
-        "only be the final edited image."
+    SUFFIX = (
+        " Do NOT respond with text. Just generate the edited image directly."
     )
 
     direct_starters = [
         "edit", "change", "modify", "transform", "convert", "turn",
         "make it", "add", "remove", "replace", "apply", "enhance",
-        "make the", "change the", "add a", "remove the",
+        "make the", "change the", "add a", "remove the", "make this",
+        "improve", "fix", "adjust",
     ]
     if any(prompt.lower().startswith(s) for s in direct_starters):
-        return f"{prompt}.{CRITICAL_SUFFIX}"
+        return f"{prompt}{SUFFIX}"
 
-    return f"Edit this image: {prompt}.{CRITICAL_SUFFIX}"
+    return f"{prompt}{SUFFIX}"
 
 
 def upload_image_to_page(page, image_bytes):
@@ -666,10 +664,20 @@ def send_edit_via_browser(image_url, edit_prompt):
                 got_text = True
                 stable_count = 0
                 print(f"[*] Got text response ({len(text)} chars)")
+                print(f"[*] Text preview: {text[:200]}")
             elif text and text == last_text:
                 stable_count += 1
                 if stable_count >= 4:
                     print(f"[+] Text stable at {elapsed}s")
+                    # Dump page HTML for debugging
+                    try:
+                        html = page.content()
+                        html_path = "/tmp/ddg_edit_page.html"
+                        with open(html_path, "w", encoding="utf-8") as f:
+                            f.write(html)
+                        print(f"[*] Page HTML saved to {html_path}")
+                    except Exception:
+                        pass
                     break
 
             if elapsed >= wait_time:
