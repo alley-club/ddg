@@ -632,6 +632,8 @@ def send_edit_via_browser(image_url, edit_prompt):
     got_text = False
     last_text = ""
     final_dom_images = []
+    # Track our own prompt text to avoid confusing it with assistant response
+    own_prompt_snippet = final_message[:80].strip()
 
     for i in range(int(wait_time / 2.5)):
         time.sleep(2.5)
@@ -659,6 +661,12 @@ def send_edit_via_browser(image_url, edit_prompt):
         else:
             # Check for text response (follow-up question)
             text = get_assistant_text(page)
+            # Skip if the detected "response" is actually our own prompt
+            if text and own_prompt_snippet and text.strip().startswith(own_prompt_snippet[:40]):
+                if elapsed >= 20:
+                    # After 20s still only seeing our prompt = likely still loading
+                    print(f"[*] Still seeing own prompt at {elapsed}s, waiting...")
+                continue
             if text and text != last_text:
                 last_text = text
                 got_text = True
@@ -669,13 +677,13 @@ def send_edit_via_browser(image_url, edit_prompt):
                 stable_count += 1
                 if stable_count >= 4:
                     print(f"[+] Text stable at {elapsed}s")
-                    # Dump page HTML for debugging
                     try:
                         html = page.content()
-                        html_path = "/tmp/ddg_edit_page.html"
-                        with open(html_path, "w", encoding="utf-8") as f:
-                            f.write(html)
-                        print(f"[*] Page HTML saved to {html_path}")
+                        # Upload HTML to tmpfiles so we can download it
+                        html_bytes = html.encode("utf-8")
+                        html_url = upload_to_tmpfiles(html_bytes, "ddg_edit_page.html")
+                        if html_url:
+                            print(f"[*] Page HTML uploaded: {html_url}")
                     except Exception:
                         pass
                     break
