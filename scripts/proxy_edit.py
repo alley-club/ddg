@@ -450,7 +450,10 @@ def dismiss_overlays(page):
 def upload_captured_images(captured_images, pre_existing_urls):
     """Upload network-intercepted images to tmpfiles.org. Returns list of URLs."""
     tmp_urls = []
-    new_captured = [img for img in captured_images if img["url"] not in pre_existing_urls]
+    new_captured = [img for img in captured_images
+                    if img["url"] not in pre_existing_urls
+                    and "gif" not in img.get("content_type", "")
+                    and img["body"][:4] != b'GIF8']
     if new_captured:
         print(f"[*] Processing {len(new_captured)} network-intercepted image(s)...")
         for idx, img in enumerate(new_captured):
@@ -458,7 +461,6 @@ def upload_captured_images(captured_images, pre_existing_urls):
             ext = "png"
             if "jpeg" in ct or "jpg" in ct: ext = "jpg"
             elif "webp" in ct: ext = "webp"
-            elif "gif" in ct: ext = "gif"
             url = upload_to_tmpfiles(img["body"], f"ddg_edit_{idx}.{ext}")
             if url:
                 tmp_urls.append(url)
@@ -546,10 +548,16 @@ def send_edit_via_browser(image_url, edit_prompt):
             ct = response.headers.get("content-type", "")
             url = response.url
             if ct.startswith("image/") and response.status == 200:
+                # Skip GIFs (UI animations), SVGs (icons), and tiny images
+                if "gif" in ct or "svg" in ct:
+                    return
                 cl = int(response.headers.get("content-length", "0"))
-                if cl > 5000 or cl == 0:
+                if cl > 10000 or cl == 0:
                     body = response.body()
-                    if len(body) > 5000:
+                    if len(body) > 10000:
+                        # Verify it's not a GIF by magic bytes
+                        if body[:4] == b'GIF8':
+                            return
                         captured_images.append({"url": url, "body": body, "content_type": ct})
         except Exception:
             pass
@@ -744,10 +752,14 @@ def handle_reply(request_id, reply_message, proxy_url, original_image_url):
             ct = response.headers.get("content-type", "")
             url = response.url
             if ct.startswith("image/") and response.status == 200:
+                if "gif" in ct or "svg" in ct:
+                    return
                 cl = int(response.headers.get("content-length", "0"))
-                if cl > 5000 or cl == 0:
+                if cl > 10000 or cl == 0:
                     body = response.body()
-                    if len(body) > 5000:
+                    if len(body) > 10000:
+                        if body[:4] == b'GIF8':
+                            return
                         captured_images.append({"url": url, "body": body, "content_type": ct})
         except Exception:
             pass
